@@ -2,126 +2,131 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 
-def load_label(label_file):
-    f = open(label_file)
-    line = f.readlines()
-    line = [int(item.strip()) for item in line]
-    sample_num = len(line)
-    return line, sample_num
+def load_labels_from_file(label_file):
+    """Load labels from the provided label file."""
+    with open(label_file) as f:
+        lines = [int(line.strip()) for line in f.readlines()]
+    sample_num = len(lines)
+    return lines, sample_num
 
-def load_sample(sample_file, sample_num, pool):
-    f = open(sample_file)
-    line = f.readlines()
-    file_length = int(len(line)) 
-    width = int(len(line[0]))  
-    length = int(file_length/sample_num) 
-    all_image = []
+def load_samples_from_file(sample_file, sample_num, pool_size):
+    """Load samples from the given sample file and downscale them by a pooling factor."""
+    with open(sample_file) as f:
+        lines = f.readlines()
+    file_length = len(lines)
+    width = len(lines[0])
+    length = int(file_length / sample_num)
+    all_images = []
+
     for i in range(sample_num):
-        single_image = np.zeros((length,width))
-        count=0
-        for j in range(length*i,length*(i+1)): 
-            single_line=line[j]
+        single_image = np.zeros((length, width))
+        count = 0
+        for j in range(length * i, length * (i + 1)):
+            single_line = lines[j]
             for k in range(len(single_line)):
-                if(single_line[k] == "+" or single_line[k] == "#"):
-                    single_image[count, k] = 1 
-            count+=1        
-        all_image.append(single_image) 
-    new_row = int(length/pool)
-    new_col = int(width/pool)
-    new_all_image = np.zeros((sample_num, new_row, new_col))
+                if single_line[k] in ('+', '#'):
+                    single_image[count, k] = 1
+            count += 1
+        all_images.append(single_image)
+
+    new_row = int(length / pool_size)
+    new_col = int(width / pool_size)
+    pooled_images = np.zeros((sample_num, new_row, new_col))
+    
     for i in range(sample_num):
         for j in range(new_row):
             for k in range(new_col):
-                new_pixel = 0
-                for row in range(pool*j,pool*(j+1)):
-                    for col in range(pool*k,pool*(k+1)):
-                        new_pixel += all_image[i][row,col]
-                new_all_image[i,j,k] = new_pixel
-    return new_all_image
+                pooled_pixel = 0
+                for row in range(pool_size * j, pool_size * (j + 1)):
+                    for col in range(pool_size * k, pool_size * (k + 1)):
+                        pooled_pixel += all_images[i][row, col]
+                pooled_images[i, j, k] = pooled_pixel
+    return pooled_images
 
-def process_data(data_file, label_file, pool):
-    label, sample_num = load_label(label_file)
-    data = load_sample(data_file, sample_num, pool)
-    new_data=[]
-    for i in range(len(data)):
-        new_data.append(data[i].flatten())
-    idx = np.random.shuffle(np.arange(int(len(new_data))))
-    return np.squeeze(np.array(new_data)[idx]), np.squeeze(np.array(label)[idx])
+def process_and_shuffle_data(data_file, label_file, pool_size):
+    """Process and shuffle the data and labels."""
+    labels, sample_num = load_labels_from_file(label_file)
+    data = load_samples_from_file(data_file, sample_num, pool_size)
+    flattened_data = [image.flatten() for image in data]
+    indices = np.arange(len(flattened_data))
+    np.random.shuffle(indices)
+    return np.array(flattened_data)[indices], np.array(labels)[indices]
 
+def gradient_descent_optimization(weights, bias, x, y, iterations, learning_rate):
+    """Optimize weights and bias using gradient descent."""
+    for _ in range(iterations):
+        weight_gradient, bias_gradient, _ = compute_gradients(weights, bias, x, y)
+        weights -= learning_rate * weight_gradient
+        bias -= learning_rate * bias_gradient
+    return weights, bias
 
-def optimization(w, b, x, y, iter, lr):
-    for i in range(iter):
-        dw, db, cost = propagation(w, b, x, y)
-        w = w - lr*dw
-        b = b - lr*db
-        # if i % 100 == 0:
-        #     print("cost after iteration{}: {}".format(i, cost))
-    return w, b, dw ,db
-
-def propagation(w, b, x,y):
+def compute_gradients(weights, bias, x, y):
+    """Calculate gradients and cost for the given weights, bias, and data."""
     m = x.shape[0]
-    atv = np.squeeze(sigmoid(np.dot(x,w)+b)) 
+    activation = np.squeeze(sigmoid(np.dot(x, weights) + bias))
     y = np.array([int(item) for item in y])
-    cost = -(1/m)*np.sum(y*np.log(atv)+(1-y)*np.log(1-atv)) # loss function
-    dw = (1/m)*np.dot(x.T,(atv-y)).reshape(w.shape[0],1)
-    db = (1/m)*np.sum(atv-y)
-    return dw, db, cost
+    cost = -(1 / m) * np.sum(y * np.log(activation) + (1 - y) * np.log(1 - activation))
+    weight_gradient = (1 / m) * np.dot(x.T, (activation - y)).reshape(weights.shape[0], 1)
+    bias_gradient = (1 / m) * np.sum(activation - y)
+    return weight_gradient, bias_gradient, cost
 
 def sigmoid(z):
-    s = 1 / (1 + np.exp(-z)) 
-    return s   
+    """Apply sigmoid activation."""
+    return 1 / (1 + np.exp(-z))
 
-def predict(w, b, x ):
-    w = w.reshape(x.shape[1], 1)
-    y_pred = sigmoid(np.dot(x, w) + b)
-    for i in range(y_pred.shape[0]):
-        if(y_pred[i] > 0.5):
+def make_predictions(weights, bias, x):
+    """Predict the labels for the given input data."""
+    weights = weights.reshape(x.shape[1], 1)
+    predictions = sigmoid(np.dot(x, weights) + bias)
+    predictions = np.where(predictions > 0.5, 1, 0)
+    return predictions
 
-            y_pred[i] = 1
-        else:
-            y_pred[i] = 0
-    return y_pred
+def train_model(x_train, y_train, iterations=2000, learning_rate=0.5):
+    """Train the model using training data."""
+    weights = np.zeros((x_train.shape[1], 1))
+    bias = 0
+    weights, bias = gradient_descent_optimization(weights, bias, x_train, y_train, iterations, learning_rate)
+    return weights, bias
 
-def model(x_train, y_train, iter = 2000, lr = 0.5):
-    w = np.zeros((x_train.shape[1],1));b = 0
-    w,b, dw, db = optimization(w, b, x_train, y_train, iter, lr)
-    return w, b
-
-def plot(var, title, color, ylabel):
+def plot_graph(var, title, color, ylabel):
+    """Plot the specified graph with the given data."""
     x = np.arange(0.1, 1.1, 0.1)
-    plt.plot(x, var, label = 'time', color=color)
+    plt.plot(x, var, label='time', color=color)
     plt.xlabel('Percentage of Training Data')
     plt.title(title)
     plt.ylabel(ylabel)
     plt.tight_layout()
     plt.show()
 
-def acc(pred, label):
-    acc = 1 - np.mean(np.abs(pred-label))
-    return acc
+def calculate_accuracy(pred, label):
+    """Calculate the accuracy of the predictions."""
+    return 1 - np.mean(np.abs(pred - label))
 
 def main():
-    pool = 3
-    train = "data/facedata/facedatatrain"
-    train_label = "data/facedata/facedatatrainlabels"
-    test = "data/facedata/facedatatest"
-    test_label = "data/facedata/facedatatestlabels"
-    x_train, y_train = process_data(train, train_label, pool)
-    x_test, y_test = process_data(test, test_label, pool)
-    amount = int(x_train.shape[0]/10)
-    time_consume = []
-    test_acc = []
+    pooling_factor = 3
+    train_data_file = "data/facedata/facedatatrain"
+    train_label_file = "data/facedata/facedatatrainlabels"
+    test_data_file = "data/facedata/facedatatest"
+    test_label_file = "data/facedata/facedatatestlabels"
+    x_train, y_train = process_and_shuffle_data(train_data_file, train_label_file, pooling_factor)
+    x_test, y_test = process_and_shuffle_data(test_data_file, test_label_file, pooling_factor)
+    sample_size = int(x_train.shape[0] / 10)
+    time_taken = []
+    test_accuracies = []
+
     for i in range(10):
         start = time.time()
-        print('Training using',amount*(i+1))
-        w, b = model(x_train[0:amount*(i+1)],y_train[0:amount*(i+1)])
+        print('Training using', sample_size * (i + 1))
+        weights, bias = train_model(x_train[:sample_size * (i + 1)], y_train[:sample_size * (i + 1)])
         end = time.time()
-        y_pred_test = predict(w, b, x_test)
-        y_pred_train = predict(w, b, x_train)
-        test_accuracy = acc(np.squeeze(y_pred_test), y_test)
-        print("test accuracy:{}".format(round(test_accuracy, 3)))
-        time_consume.append(end-start)
-        test_acc.append(test_accuracy)
-    plot(time_consume, title='Neural Network Classifier for Faces', color='blue', ylabel="Time(s)")
-    plot(test_acc, title='Neural Network Classifier for Faces', color='green', ylabel='Accuracy')
-main()
+        y_pred_test = make_predictions(weights, bias, x_test)
+        test_accuracy = calculate_accuracy(np.squeeze(y_pred_test), y_test)
+        print(f"Test accuracy: {round(test_accuracy, 3)}")
+        time_taken.append(end - start)
+        test_accuracies.append(test_accuracy)
+
+    plot_graph(time_taken, title='Neural Network Classifier for Faces (Time)', color='blue', ylabel="Time (s)")
+    plot_graph(test_accuracies, title='Neural Network Classifier for Faces (Accuracy)', color='green', ylabel='Accuracy')
+
+if __name__ == "__main__":
+    main()
