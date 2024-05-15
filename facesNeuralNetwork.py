@@ -61,7 +61,7 @@ def gradient_descent_optimization(weights, bias, x, y, iterations, learning_rate
     return weights, bias
 
 def compute_gradients(weights, bias, x, y):
-    """Calculate gradients and cost for the given weights, bias, and data."""
+    """Calculate gradients and cost for the given weights, bias, and data. (LOSS FUNCTION)"""
     m = x.shape[0]
     activation = np.squeeze(sigmoid(np.dot(x, weights) + bias))
     y = np.array([int(item) for item in y])
